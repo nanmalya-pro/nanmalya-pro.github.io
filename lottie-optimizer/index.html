@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Lottie Optimizer</title>
+<meta name="description" content="피그마에서 내보낸 Lottie JSON의 받는 양과 재생 부담을 재고, 원본과 같은 모습으로 줄여 주는 브라우저 도구">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+/* 레이아웃: 위에서 아래로 — 파일 넣기 → 두 열 비교(내보내기 / 최적화 후) → 미리보기 → 저장. 프레임 예산(16.7ms) 막대가 이 도구의 고유 장치. */
+:root {
+  --bg: #f3f5f4;
+  --surface: #ffffff;
+  --ink: #16201e;
+  --muted: #5b6a66;
+  --line: #d8dfdc;
+  --accent: #0d6e63;
+  --accent-ink: #ffffff;
+  --accent-soft: #dcefeb;
+  --ok: #1d7a3e;
+  --ok-soft: #e1f3e6;
+  --warn: #b4541a;
+  --warn-soft: #fbe9dc;
+  --budget: #c9a227;
+  --stage: #e9edeb;
+  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --r: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101615; --surface: #172020; --ink: #e5ece9; --muted: #93a39e; --line: #2a3634;
+    --accent: #43b8a6; --accent-ink: #06201c; --accent-soft: #163a35; --ok: #5cc884; --ok-soft: #173326;
+    --warn: #f0a46a; --warn-soft: #3a2517; --budget: #d9b84a; --stage: #1d2827; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101615; --surface: #172020; --ink: #e5ece9; --muted: #93a39e; --line: #2a3634;
+  --accent: #43b8a6; --accent-ink: #06201c; --accent-soft: #163a35; --ok: #5cc884; --ok-soft: #173326;
+  --warn: #f0a46a; --warn-soft: #3a2517; --budget: #d9b84a; --stage: #1d2827; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.6; }
+.wrap { max-width: 1080px; margin: 0 auto; padding-block: 28px 64px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 24px; }
+h1 { font-size: 26px; line-height: 1.25; margin: 0; font-weight: 700; letter-spacing: -0.01em; text-wrap: balance; }
+h2 { font-size: 15px; margin: 0; font-weight: 600; }
+p { margin: 0; }
+.lede { color: var(--muted); max-width: 64ch; margin-top: 6px; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.label { font-size: 12px; color: var(--muted); letter-spacing: 0.04em; }
+button, .btn { font: inherit; font-weight: 600; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 9px 14px; cursor: pointer; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: default; }
+button:focus-visible, input:focus-visible, select:focus-visible, .drop:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* 파일 넣기 */
+.drop { border: 1.5px dashed var(--line); border-radius: var(--r); background: var(--surface); padding: 22px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; cursor: pointer; }
+.drop.over { border-color: var(--accent); background: var(--accent-soft); }
+.drop .kf { width: 34px; height: 34px; flex: none; position: relative; }
+.drop .kf::before { content: ""; position: absolute; inset: 7px; background: var(--accent); transform: rotate(45deg); border-radius: 3px; }
+.drop .txt { min-width: 0; flex: 1 1 260px; }
+.drop strong { display: block; }
+.drop .file { color: var(--muted); font-size: 13px; word-break: break-all; }
+.status { font-size: 13px; color: var(--muted); min-height: 1.6em; }
+.status.busy::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 8px; background: var(--accent); transform: rotate(45deg); animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .status.busy::before { animation: none; } }
+
+/* 비교 */
+.cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 720px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 18px; display: grid; gap: 14px; min-width: 0; align-content: start; }
+.panel.after { border-color: var(--accent); }
+.phead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.metric { display: grid; gap: 6px; }
+.mrow { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.mval { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 500; }
+.pill { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.over { background: var(--warn-soft); color: var(--warn); }
+.pill.na { background: var(--stage); color: var(--muted); }
+.sub { font-size: 12.5px; color: var(--muted); }
+.bar { position: relative; height: 10px; background: var(--stage); border-radius: 5px; overflow: hidden; }
+.bar > i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 5px; }
+.bar > i.over { background: var(--warn); }
+.bar > b { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--budget); }
+.legend { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--muted); }
+dl.facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 0; font-size: 13px; }
+dl.facts dt { color: var(--muted); }
+dl.facts dd { margin: 0; font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+
+/* 단계·옵션 */
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 13.5px; }
+.steps li { display: grid; grid-template-columns: 12px 1fr; gap: 10px; align-items: baseline; }
+.steps li::before { content: ""; width: 7px; height: 7px; background: var(--accent); transform: rotate(45deg) translateY(-1px); }
+.opts { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; font-size: 13.5px; }
+.opts label { display: inline-flex; gap: 6px; align-items: center; }
+select { font: inherit; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); }
+.note { font-size: 13px; padding: 10px 12px; border-radius: 8px; background: var(--warn-soft); color: var(--ink); }
+.note.good { background: var(--ok-soft); }
+
+/* 미리보기 */
+.players { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 720px) { .players { grid-template-columns: minmax(0, 1fr); } }
+.player { background: var(--stage); border-radius: var(--r); overflow: hidden; aspect-ratio: var(--ar, 16 / 9); max-width: 100%; position: relative; }
+.player .tag { position: absolute; left: 10px; top: 8px; font-size: 12px; color: var(--muted); z-index: 2; background: var(--surface); padding: 1px 8px; border-radius: 6px; }
+.transport { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.transport input[type=range] { flex: 1 1 200px; accent-color: var(--accent); min-width: 0; }
+.save { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+[hidden] { display: none !important; }
+.home { display: inline-block; font-size: 13px; color: var(--muted); text-decoration: none; margin-bottom: 8px; }
+.home:hover, .home:focus-visible { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <a class="home" href="../">← 도구 모음</a>
+    <h1>Lottie Optimizer</h1>
+    <p class="lede">피그마에서 내보낸 Lottie JSON을 넣으면 받는 양과 재생 부담을 재고, 기준을 넘으면 원본과 같은 모습으로 줄여 줍니다. 파일은 이 브라우저 안에서만 처리됩니다.</p>
+  </header>
+
+  <section aria-label="파일 넣기" style="display:grid;gap:8px">
+    <div class="drop" id="drop" tabindex="0" role="button" aria-describedby="dropHint">
+      <span class="kf" aria-hidden="true"></span>
+      <div class="txt">
+        <strong>Lottie JSON을 여기에 끌어다 놓거나 눌러서 고르세요</strong>
+        <span class="file" id="dropHint">피그마: 프레임 선택 → 내보내기 → Animated → Lottie</span>
+      </div>
+      <button type="button" id="demoBtn">예시 파일로 해보기</button>
+      <input type="file" id="fileInput" accept=".json,application/json" hidden>
+    </div>
+    <p class="status" id="status" role="status">기준: 실제로 받는 양 1.5MB 이하 · 한 장면 계산 8ms 이하</p>
+  </section>
+
+  <section class="cols" aria-label="비교">
+    <article class="panel" id="beforePanel">
+      <div class="phead"><h2>피그마 내보내기</h2><span class="label" id="beforeName">파일을 넣으면 여기에 나옵니다</span></div>
+      <div id="beforeBody" class="metric-wrap"></div>
+    </article>
+    <article class="panel after" id="afterPanel">
+      <div class="phead"><h2>최적화 후</h2><span class="label" id="afterTag">—</span></div>
+      <div id="afterBody"></div>
+    </article>
+  </section>
+
+  <section class="panel" aria-label="적용한 작업" id="stepsPanel" hidden>
+    <div class="phead"><h2>적용한 작업</h2><span class="label" id="sameTag"></span></div>
+    <ul class="steps" id="stepsList"></ul>
+    <div class="opts">
+      <label for="optRaster">움직이지 않는 부분 이미지화
+        <select id="optRaster"><option value="auto">자동</option><option value="on">항상</option><option value="off">끔</option></select></label>
+      <label for="optQuality">이미지 품질
+        <select id="optQuality"><option value="auto">자동</option><option value="0.9">0.9</option><option value="0.85">0.85</option><option value="0.75">0.75</option><option value="0.65">0.65</option></select></label>
+      <label><input type="checkbox" id="optDown" checked> 흐린 이미지 해상도 낮추기</label>
+      <button type="button" id="rerunBtn">이 설정으로 다시 최적화</button>
+    </div>
+    <p class="note" id="nativeNote" hidden></p>
+  </section>
+
+  <section class="panel" aria-label="미리보기" id="previewPanel" hidden>
+    <div class="phead"><h2>미리보기</h2><span class="label">같은 시점을 나란히 재생합니다</span></div>
+    <div class="players">
+      <div class="player" id="pA"><span class="tag">피그마 내보내기</span></div>
+      <div class="player" id="pB"><span class="tag">최적화 후</span></div>
+    </div>
+    <div class="transport">
+      <button type="button" id="playBtn">일시정지</button>
+      <input type="range" id="scrub" min="0" max="100" value="0" step="1" aria-label="재생 위치">
+      <span class="mono sub" id="timeLbl">0.00s</span>
+    </div>
+  </section>
+
+  <section class="panel" aria-label="저장" id="savePanel" hidden>
+    <div class="phead"><h2>저장</h2><span class="label" id="saveHint"></span></div>
+    <div class="save">
+      <button type="button" class="primary" id="saveZip">JSON + 이미지 폴더 (.zip)</button>
+      <button type="button" id="saveLottie">.lottie</button>
+      <button type="button" id="saveJson">JSON 하나 (이미지 포함)</button>
+      <span class="sub" id="saveMsg"></span>
+    </div>
+    <p class="sub">이미지 폴더 방식은 JSON과 <span class="mono">images/</span> 폴더를 같은 위치에 올리면 됩니다. 서버가 JSON을 압축해 보내므로 받는 양이 가장 적습니다.</p>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="lottie-optimizer.js"></script>
+<script>
+(function () {
+  'use strict';
+  var O = window.LottieOptimizer;
+  var $ = function (id) { return document.getElementById(id); };
+  var state = { src: null, name: '', result: null, playing: true, anims: [], busy: false };
+  var fmtMB = function (n) { return n >= 1e6 ? (n / 1e6).toFixed(2) + 'MB' : Math.max(1, Math.round(n / 1e3)) + 'KB'; };
+  var setStatus = function (t, busy) { var s = $('status'); s.textContent = t; s.classList.toggle('busy', !!busy); };
+
+  // ---------- 빈 상태: 무엇이 나올지 보여 준다 ----------
+  function emptyMetrics(el, what) {
+    el.innerHTML = '';
+    el.appendChild(metricBlock('실제로 받는 양', null, O.LIMITS.transferBytes, 'bytes'));
+    el.appendChild(metricBlock('한 장면 계산 시간', null, O.LIMITS.avgFrameMs, 'ms'));
+    var p = document.createElement('p'); p.className = 'sub'; p.textContent = what; el.appendChild(p);
+  }
+  function metricBlock(title, value, limit, kind) {
+    var wrap = document.createElement('div'); wrap.className = 'metric';
+    var ok = value == null ? null : value <= limit;
+    var shown = value == null ? '—' : (kind === 'bytes' ? fmtMB(value) : value.toFixed(1) + 'ms');
+    var pill = ok == null ? '<span class="pill na">대기</span>' : ok ? '<span class="pill ok">기준 안</span>' : '<span class="pill over">기준 초과</span>';
+    var scaleMax = kind === 'bytes' ? Math.max(limit * 2, value || 0) : Math.max(16.7 * 1.5, value || 0);
+    var w = value == null ? 0 : Math.min(100, 100 * value / scaleMax);
+    var limX = 100 * limit / scaleMax;
+    var extra = kind === 'ms' ? '<b style="left:' + (100 * 16.7 / scaleMax) + '%;opacity:.45" title="16.7ms (60fps 한계)"></b>' : '';
+    wrap.innerHTML = '<div class="mrow"><span class="label">' + title + '</span>' + pill + '</div>' +
+      '<div class="mrow"><span class="mval">' + shown + '</span><span class="sub">기준 ' + (kind === 'bytes' ? fmtMB(limit) : limit + 'ms') + '</span></div>' +
+      '<div class="bar" aria-hidden="true"><i class="' + (ok === false ? 'over' : '') + '" style="width:' + w + '%"></i><b style="left:' + limX + '%"></b>' + extra + '</div>' +
+      (kind === 'ms' ? '<div class="legend"><span>0</span><span>8ms 기준 · 16.7ms = 60fps 한계</span></div>' : '');
+    return wrap;
+  }
+  function facts(c, m) {
+    var dl = document.createElement('dl'); dl.className = 'facts';
+    var rows = [
+      ['파일 하나로 저장', fmtMB(c.bytes.single)],
+      ['JSON (압축 후)', fmtMB(c.bytes.jsonGzip == null ? c.bytes.json : c.bytes.jsonGzip)],
+      ['이미지', fmtMB(c.bytes.images) + ' · ' + c.images.count + '개'],
+      ['그려지는 레이어', c.layersRendered.toLocaleString()],
+      ['화면 요소', m ? m.domNodes.toLocaleString() : '—'],
+      ['가장 무거운 장면', m ? m.worstFrameMs + 'ms' : '—'],
+      ['크기 · 길이', c.size.w + '×' + c.size.h + ' · ' + (c.size.frames / c.size.fr).toFixed(1) + 's @' + c.size.fr + 'fps']
+    ];
+    rows.forEach(function (r) { var dt = document.createElement('dt'), dd = document.createElement('dd'); dt.textContent = r[0]; dd.textContent = r[1]; dl.appendChild(dt); dl.appendChild(dd); });
+    return dl;
+  }
+  function renderSide(el, c, m) {
+    el.innerHTML = '';
+    var g = document.createElement('div'); g.style.cssText = 'display:grid;gap:14px';
+    g.appendChild(metricBlock('실제로 받는 양', c.transferBytes, O.LIMITS.transferBytes, 'bytes'));
+    g.appendChild(metricBlock('한 장면 계산 시간', m ? m.avgFrameMs : null, O.LIMITS.avgFrameMs, 'ms'));
+    g.appendChild(facts(c, m));
+    el.appendChild(g);
+  }
+
+  // ---------- 처리 ----------
+  function options() {
+    var r = $('optRaster').value, q = $('optQuality').value, o = { downscale: $('optDown').checked };
+    if (r !== 'auto') o.raster = r === 'on';
+    if (q !== 'auto') o.quality = Number(q);
+    return o;
+  }
+  async function run(json, name) {
+    if (state.busy) return;
+    state.busy = true; toggleBusy(true);
+    try {
+      state.src = json; state.name = name;
+      $('beforeName').textContent = name;
+      emptyMetrics($('afterBody'), '최적화하는 중입니다.');
+      setStatus('점검하는 중', true);
+      var res = await O.autoOptimize(json, function (m) { setStatus(m, true); }, options());
+      state.result = res;
+      renderSide($('beforeBody'), res.before.check, res.before.measure);
+      renderSide($('afterBody'), res.after.check, res.after.measure);
+      $('afterTag').textContent = res.quality ? '이미지 품질 ' + res.quality : '';
+      renderSteps(res);
+      $('stepsPanel').hidden = false; $('savePanel').hidden = false; $('previewPanel').hidden = false;
+      startPreview(json, res.data);
+      setStatus('원본과 같은지 비교하는 중', true);
+      var cmp = await O.compare(json, res.data, { samples: 8, width: 520 });
+      $('sameTag').textContent = cmp.same ? '원본과 같음 (내용 차이 없음)' : '원본과 다른 곳이 있음 — 미리보기로 확인하세요';
+      $('sameTag').style.color = cmp.same ? 'var(--ok)' : 'var(--warn)';
+      var a = res.after;
+      var allOk = a.check.transferBytes <= O.LIMITS.transferBytes && a.measure.ok;
+      setStatus(allOk ? '완료 · 두 기준을 모두 통과했습니다' : '완료 · 기준을 넘는 항목이 있습니다 (위 표 참고)', false);
+      $('saveHint').textContent = name.replace(/\.json$/i, '') + '_optimized';
+    } catch (e) {
+      setStatus('처리하지 못했습니다: ' + (e && e.message ? e.message : e) + ' — Lottie JSON 파일이 맞는지 확인하세요.', false);
+    } finally { state.busy = false; toggleBusy(false); }
+  }
+  function toggleBusy(b) { ['rerunBtn', 'demoBtn', 'saveZip', 'saveLottie', 'saveJson'].forEach(function (id) { $(id).disabled = b; }); }
+  var STEP_LABEL = { raster: '움직이지 않는 부분 이미지화', downscale: '흐린 이미지 해상도', webp: 'WebP 변환', trim: '투명 구간 정리', drop: '안 보이는 레이어 삭제',
+    bake: '움직이지 않는 묶음 정리', assets: '쓰지 않는 에셋', glyphs: '쓰지 않는 글자 모양' };
+  function renderSteps(res) {
+    var ul = $('stepsList'); ul.innerHTML = '';
+    if (!res.raster) { var li0 = document.createElement('li'); li0.textContent = '움직이지 않는 부분 이미지화: 재생 부담이 기준 안이라 하지 않았습니다'; ul.appendChild(li0); }
+    Object.keys(STEP_LABEL).forEach(function (k) {
+      if (!res.steps[k]) return;
+      var li = document.createElement('li'); li.textContent = STEP_LABEL[k] + ': ' + res.steps[k]; ul.appendChild(li);
+    });
+    var nc = res.after.check.nativeCheck, n = $('nativeNote');
+    n.hidden = !nc.length;
+    if (nc.length) n.textContent = '앱(iOS·Android) 재생기에서 확인이 필요한 효과: ' + nc.join(', ') + '. 웹(lottie-web)에서는 그려집니다.';
+  }
+
+  // ---------- 미리보기 ----------
+  function startPreview(a, b) {
+    state.anims.forEach(function (x) { x.destroy(); }); state.anims = [];
+    document.documentElement.style.setProperty('--ar', a.w + ' / ' + a.h);
+    [['pA', a], ['pB', b]].forEach(function (p) {
+      var el = $(p[0]); Array.from(el.querySelectorAll('svg')).forEach(function (s) { s.remove(); });
+      var anim = lottie.loadAnimation({ container: el, renderer: 'svg', loop: true, autoplay: false, animationData: JSON.parse(JSON.stringify(p[1])) });
+      state.anims.push(anim);
+    });
+    var total = state.anims[0].totalFrames;
+    $('scrub').max = String(Math.max(0, total - 1));
+    var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    state.playing = !reduce; $('playBtn').textContent = state.playing ? '일시정지' : '재생';
+    state.anims[0].addEventListener('enterFrame', function () {
+      var f = state.anims[0].currentFrame; $('scrub').value = String(Math.round(f));
+      $('timeLbl').textContent = (f / (a.fr || 60)).toFixed(2) + 's';
+    });
+    Promise.all(state.anims.map(function (x) { return new Promise(function (r) { if (x.isLoaded) r(); else x.addEventListener('DOMLoaded', r); }); }))
+      .then(function () { state.anims.forEach(function (x) { x.goToAndStop(0, true); if (state.playing) x.play(); }); });
+  }
+  $('playBtn').addEventListener('click', function () {
+    state.playing = !state.playing; this.textContent = state.playing ? '일시정지' : '재생';
+    var f = state.anims[0] ? state.anims[0].currentFrame : 0;
+    state.anims.forEach(function (x) { x.goToAndStop(f, true); if (state.playing) x.play(); });
+  });
+  $('scrub').addEventListener('input', function () {
+    var f = Number(this.value); state.playing = false; $('playBtn').textContent = '재생';
+    state.anims.forEach(function (x) { x.goToAndStop(f, true); });
+    if (state.src) $('timeLbl').textContent = (f / (state.src.fr || 60)).toFixed(2) + 's';
+  });
+
+  // ---------- 파일 받기 ----------
+  function readFile(f) {
+    if (!f) return;
+    var r = new FileReader();
+    r.onload = function () {
+      var j; try { j = JSON.parse(r.result); } catch (e) { setStatus('JSON으로 읽을 수 없는 파일입니다. 피그마에서 Lottie(JSON)로 내보낸 파일을 넣어 주세요.'); return; }
+      if (!j || !j.layers || !j.w) { setStatus('Lottie 형식이 아닙니다 (layers·w 항목이 없음).'); return; }
+      run(j, f.name);
+    };
+    r.readAsText(f);
+  }
+  var drop = $('drop');
+  drop.addEventListener('click', function (e) { if (e.target.id !== 'demoBtn') $('fileInput').click(); });
+  drop.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('fileInput').click(); } });
+  $('fileInput').addEventListener('change', function () { readFile(this.files[0]); this.value = ''; });
+  ['dragenter', 'dragover'].forEach(function (t) { drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.add('over'); }); });
+  ['dragleave', 'drop'].forEach(function (t) { drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.remove('over'); }); });
+  drop.addEventListener('drop', function (e) { readFile(e.dataTransfer.files[0]); });
+  $('rerunBtn').addEventListener('click', function () { if (state.src) run(state.src, state.name); });
+
+  // ---------- 예시 파일 (이 페이지가 만든 가짜 애니메이션) ----------
+  function demo() {
+    var cv = document.createElement('canvas'); cv.width = 480; cv.height = 300;
+    var x = cv.getContext('2d'), g = x.createLinearGradient(0, 0, 480, 300);
+    g.addColorStop(0, '#0d6e63'); g.addColorStop(1, '#9ad4c9'); x.fillStyle = g; x.fillRect(0, 0, 480, 300);
+    x.fillStyle = 'rgba(255,255,255,.85)'; x.font = '600 34px sans-serif'; x.fillText('예시 화면', 32, 70);
+    var png = cv.toDataURL('image/png');
+    var rect = function (nm, xx, yy, w, h, col, anim) {
+      return { ddd: 0, ind: 0, ty: 4, nm: nm, sr: 1, ip: 0, op: 120, st: 0, bm: 0,
+        ks: { o: { a: 0, k: 100 }, r: { a: 0, k: 0 }, p: anim || { a: 0, k: [xx, yy] }, a: { a: 0, k: [0, 0] }, s: { a: 0, k: [100, 100] } },
+        shapes: [{ ty: 'gr', it: [{ ty: 'rc', p: { a: 0, k: [w / 2, h / 2] }, s: { a: 0, k: [w, h] }, r: { a: 0, k: 12 } },
+          { ty: 'fl', c: { a: 0, k: col }, o: { a: 0, k: 100 } }, { ty: 'tr', p: { a: 0, k: [0, 0] }, a: { a: 0, k: [0, 0] }, s: { a: 0, k: [100, 100] }, r: { a: 0, k: 0 }, o: { a: 0, k: 100 } }] }] };
+    };
+    var layers = [
+      rect('카드', 0, 0, 160, 60, [1, 0.62, 0.25, 1], { a: 1, k: [{ t: 0, s: [60, 380], i: { x: [0.3], y: [1] }, o: { x: [0.6], y: [0] } }, { t: 60, s: [60, 300] }] }),
+      { ddd: 0, ind: 0, ty: 2, nm: '화면', refId: 'img0', sr: 1, ip: 0, op: 120, st: 0, bm: 0,
+        ks: { o: { a: 1, k: [{ t: 0, s: [0], i: { x: [0.4], y: [1] }, o: { x: [0.6], y: [0] } }, { t: 30, s: [100] }] }, r: { a: 0, k: 0 }, p: { a: 0, k: [60, 60] }, a: { a: 0, k: [0, 0] }, s: { a: 0, k: [100, 100] } } },
+      rect('줄 1', 60, 400, 480, 14, [0.85, 0.89, 0.88, 1]), rect('줄 2', 60, 430, 400, 14, [0.85, 0.89, 0.88, 1]),
+      rect('줄 3', 60, 460, 440, 14, [0.85, 0.89, 0.88, 1]), rect('바탕', 0, 0, 600, 520, [0.95, 0.96, 0.96, 1])
+    ];
+    layers.forEach(function (l, i) { l.ind = i + 1; });
+    return { v: '5.7.0', meta: { g: '예시 (Lottie Optimizer)' }, fr: 60, ip: 0, op: 120, w: 600, h: 520, nm: 'example', ddd: 0,
+      assets: [{ id: 'img0', w: 480, h: 300, u: '', p: png, e: 1 }], layers: layers };
+  }
+  $('demoBtn').addEventListener('click', function (e) { e.stopPropagation(); run(demo(), '예시 애니메이션.json'); });
+
+  // ---------- 저장 ----------
+  function download(blob, filename) {
+    var url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+  }
+  async function save(kind) {
+    if (!state.result) return;
+    var base = state.name.replace(/\.json$/i, '') + '_optimized';
+    try {
+      $('saveMsg').textContent = '파일을 만드는 중';
+      var data, ext;
+      if (kind === 'zip') { data = await O.packZip(state.result.data, base); ext = '.zip'; }
+      else if (kind === 'lottie') { data = await O.packDotLottie(state.result.data, 'animation'); ext = '.lottie'; }
+      else { data = new Blob([JSON.stringify(state.result.data)], { type: 'application/json' }); ext = '.json'; }
+      download(data, base + ext);
+      $('saveMsg').textContent = base + ext + ' (' + fmtMB(data.size) + ')';
+    } catch (e) {
+      $('saveMsg').textContent = '저장하지 못했습니다 (' + (e && e.message ? e.message : e) + ')';
+    }
+  }
+  $('saveZip').addEventListener('click', function () { save('zip'); });
+  $('saveLottie').addEventListener('click', function () { save('lottie'); });
+  $('saveJson').addEventListener('click', function () { save('json'); });
+
+  emptyMetrics($('beforeBody'), '내보낸 그대로의 받는 양과 재생 부담을 잽니다.');
+  emptyMetrics($('afterBody'), '기준을 넘으면 원본과 같은 모습으로 줄인 결과가 여기에 나옵니다.');
+})();
+</script>
+</body>
+</html>
