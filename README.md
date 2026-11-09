@@ -6,3 +6,4 @@
 |---|---|
 | Lottie 모션 테스터 | https://nanmalya-pro.github.io/lottie-tester/ |
 | Lottie Optimizer | https://nanmalya-pro.github.io/lottie-optimizer/ |
+| MD Viewer (Windows, zip) | https://github.com/nanmalya-pro/nanmalya-pro.github.io/releases/tag/mdviewer-v1.6.1 |
