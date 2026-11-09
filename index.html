@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>nanmalya tools</title>
+<meta name="description" content="브라우저에서 바로 쓰는 작은 디자인·모션 도구 모음">
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --line: #e2e5eb;
+    --text: #1a1c22;
+    --muted: #6b7280;
+    --accent: #00a888;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1c22;
+      --card: #22252d;
+      --line: #2c2f38;
+      --text: #e8eaf0;
+      --muted: #9aa3b5;
+      --accent: #00c4a0;
+    }
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Pretendard', 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 56px 16px 40px; }
+  header h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+  header p { color: var(--muted); margin-top: 6px; font-size: 15px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
+    margin-top: 32px;
+  }
+  .card {
+    display: block;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 20px;
+    color: inherit;
+    text-decoration: none;
+    transition: border-color .15s, transform .15s;
+  }
+  a.card:hover, a.card:focus-visible { border-color: var(--accent); transform: translateY(-2px); outline: none; }
+  .card .icon { font-size: 28px; }
+  .card h2 { font-size: 17px; font-weight: 600; margin-top: 10px; }
+  .card p { font-size: 14px; color: var(--muted); margin-top: 4px; }
+  .card .tag {
+    display: inline-block;
+    margin-top: 12px;
+    font-size: 12px;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  footer { margin-top: 48px; font-size: 13px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>nanmalya tools</h1>
+    <p>브라우저에서 바로 쓰는 작은 디자인·모션 도구 모음. 파일은 내 PC 브라우저 안에서만 처리되고 서버로 올라가지 않습니다.</p>
+  </header>
+
+  <main class="grid">
+    <a class="card" href="lottie-tester/">
+      <div class="icon">🎬</div>
+      <h2>Lottie 모션 테스터</h2>
+      <p>Lottie JSON 파일을 끌어다 놓고 재생·구간 이동·속도·배경을 바꿔 가며 확인합니다.</p>
+      <span class="tag">열기 →</span>
+    </a>
+  </main>
+
+  <footer>© nanmalya-pro</footer>
+</div>
+</body>
+</html>
